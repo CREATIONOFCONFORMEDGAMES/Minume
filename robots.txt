@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://entrega-paises-rd.mintycow66.chatgpt.site/sitemap.xml
