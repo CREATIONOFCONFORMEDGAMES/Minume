@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);let attempts=0,muted=false,audio,spinning=false,raf,frame;const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 function tone(freq,duration=.1,type='sine',volume=.06){if(muted)return;try{audio??=new(window.AudioContext||window.webkitAudioContext)();audio.resume();const o=audio.createOscillator(),g=audio.createGain();o.type=type;o.frequency.value=freq;g.gain.setValueAtTime(volume,audio.currentTime);g.gain.exponentialRampToValueAtTime(.001,audio.currentTime+duration);o.connect(g);g.connect(audio.destination);o.start();o.stop(audio.currentTime+duration)}catch{}}
-function toggleSound(){muted=!muted;if(muted)$('cat-audio').pause();$('sound').setAttribute('aria-pressed',String(!muted));$('sound').setAttribute('aria-label',muted?'Activar sonido':'Desactivar sonido');$('sound').innerHTML=muted?'◖)) <span>SONIDO OFF</span>':'◖)) <span>SONIDO ON</span>';$('show-sound').textContent=muted?'♪ ×':'◖))';if(!muted)tone(600)}$('sound').onclick=toggleSound;$('show-sound').onclick=toggleSound;
+function toggleSound(){muted=!muted;if(muted)stopCatSound();$('sound').setAttribute('aria-pressed',String(!muted));$('sound').setAttribute('aria-label',muted?'Activar sonido':'Desactivar sonido');$('sound').innerHTML=muted?'◖)) <span>SONIDO OFF</span>':'◖)) <span>SONIDO ON</span>';$('show-sound').textContent=muted?'♪ ×':'◖))';if(!muted)tone(600)}$('sound').onclick=toggleSound;$('show-sound').onclick=toggleSound;
 function moveButton(){const b=$('reveal'),w=b.offsetWidth,h=b.offsetHeight;const spots=[[.7,.25],[.08,.68],[.67,.73],[.1,.23],[.4,.46]];const [x,y]=spots[attempts-1];b.style.position='fixed';b.style.left=Math.max(16,Math.min(innerWidth-w-16,x*innerWidth))+'px';b.style.top=Math.max(100,Math.min(innerHeight-h-30,y*innerHeight))+'px'}
 $('reveal').onclick=()=>{if(spinning||$('error').open)return;attempts++;tone(145,.3,'sawtooth',.035);$('error-code').textContent='ERROR 0'+attempts;$('error').showModal();$('close-error').focus()};
 function dismiss(){$('error').close()}$('close-error').onclick=dismiss;$('retry').onclick=dismiss;$('error').addEventListener('close',()=>{moveButton();if(attempts===5)start();else $('reveal').focus({preventScroll:true})});addEventListener('resize',()=>{if(attempts>0&&attempts<5)moveButton()});
@@ -14,12 +14,31 @@ function celebrate(duration){cancelAnimationFrame(raf);const c=$('confetti'),ctx
 
 
 // Read for 5 s; first three flashes, then a 5 s pause before the 3 s finale.
-let catTimers=[];
-function stopCatSequence(){catTimers.forEach(clearTimeout);catTimers=[];$('cat-flash').hidden=true;$('cat-audio').pause();$('cat-audio').currentTime=0;}
-function startCatSequence(){stopCatSequence();const flash=(duration)=>{$('cat-flash').hidden=false;if(!muted){const sound=$('cat-audio');sound.pause();sound.currentTime=0;sound.play().catch(()=>{});}catTimers.push(setTimeout(()=>$('cat-flash').hidden=true,duration));};
+let catTimers=[],catSource,catBuffer,catLoading,catRun=0;
+function stopCatSound(){if(catSource){try{catSource.stop();}catch{}catSource.disconnect();catSource=null;}}
+function prepareCatSound(){
+  try{
+    audio??=new(window.AudioContext||window.webkitAudioContext)();
+    // Resume synchronously from the user's tap, before any network work.
+    if(audio.state!=='running')audio.resume().catch(()=>{});
+    if(!catLoading)catLoading=fetch('gato.m4a').then(r=>{if(!r.ok)throw new Error('Audio unavailable');return r.arrayBuffer();}).then(bytes=>new Promise((resolve,reject)=>audio.decodeAudioData(bytes,resolve,reject))).then(buffer=>{catBuffer=buffer;return buffer;}).catch(()=>{catLoading=null;return null;});
+    return catLoading;
+  }catch{return Promise.resolve(null);}
+}
+document.addEventListener('pointerdown',()=>{if(!muted)prepareCatSound();},{passive:true});
+document.addEventListener('keydown',()=>{if(!muted)prepareCatSound();});
+function playCatSound(){
+  stopCatSound();
+  if(muted||!catBuffer||audio.state!=='running')return;
+  const source=audio.createBufferSource();source.buffer=catBuffer;source.connect(audio.destination);catSource=source;
+  source.onended=()=>{source.disconnect();if(catSource===source)catSource=null;};
+  source.start(0,0);
+}
+function stopCatSequence(){catRun++;catTimers.forEach(clearTimeout);catTimers=[];stopCatSound();$('cat-flash').hidden=true;}
+async function startCatSequence(){stopCatSequence();const run=catRun;if(!muted)await prepareCatSound();if(run!==catRun)return;const flash=(duration)=>{$('cat-flash').hidden=false;playCatSound();catTimers.push(setTimeout(()=>$('cat-flash').hidden=true,duration));};
 const schedule=(fn,delay)=>catTimers.push(setTimeout(fn,delay));
 [5000,5800,7100].forEach(delay=>schedule(()=>flash(300),delay));
 for(let i=0;i<10;i++)schedule(()=>flash(220),12400+i*300);
-schedule(()=>{$('cat-flash').hidden=true;$('cat-audio').pause();$('cat-audio').currentTime=0;},15400);
+schedule(()=>{$('cat-flash').hidden=true;stopCatSound();},15400);
 }
 
